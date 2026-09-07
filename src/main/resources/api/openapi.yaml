@@ -1,0 +1,323 @@
+openapi: 3.0.3
+info:
+    title: Weather Station Metric Service API
+    description: >
+        A generic time-series API for ingesting, storing, and querying weather sensor 
+        data from various sources.
+    version: 1.1.0
+
+servers:
+    - url: https://api.weather-service.gandhre.com/v1
+      description: Production Server
+    - url: http://localhost:8080/v1
+      description: Local Development
+
+paths:
+    /ingest:
+        post:
+            summary: Ingest weather station metrics
+            description: Receives a batch of real-time sensor metrics from a weather station.
+            operationId: ingestMetrics
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/IngestPayload"
+                        example:
+                            station_id: "ha-home-2026"
+                            device_model: "md-2026"
+                            timestamp: "2026-09-07T11:50:00Z"
+                            metrics:
+                                - metric_id: "temp_outdoor"
+                                  name: "Outdoor Temperature"
+                                  value: 22.4
+                                  unit: "C"
+                                - metric_id: "humidity_outdoor"
+                                  name: "Outdoor Humidity"
+                                  value: 58.0
+                                  unit: "%"
+                                - metric_id: "wind_gust"
+                                  name: "Wind Gust"
+                                  value: 18.5
+                                  unit: "km/h"
+                                - metric_id: "rain_daily"
+                                  name: "Daily Rainfall"
+                                  value: 1.2
+                                  unit: "mm"
+            responses:
+                "201":
+                    description: Metrics ingested successfully
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/IngestResponse"
+                            example:
+                                status: "success"
+                                message: "Metrics recorded successfully"
+                                station_id: "ha-home-2026"
+                                metrics_processed: 4
+                                processed_at: "2026-09-07T11:50:01Z"
+                "400":
+                    $ref: "#/components/responses/400BadRequest"
+                "500":
+                    $ref: "#/components/responses/500InternalError"
+
+    /analytics/query:
+        post:
+            summary: Query aggregated metric statistics
+            description: >
+                Allows querying statistical aggregations (average, min, max, sum) configured individually 
+                per metric for specific sensors and date ranges.
+            operationId: queryAnalytics
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/QueryRequest"
+                        example:
+                            station_ids:
+                                - "ha-home-2026"
+                                - "hs-home-2027"
+                            metrics:
+                                - metric_id: "temp_outdoor"
+                                  statistic: "average"
+                                - metric_id: "wind_gust"
+                                  statistic: "max"
+                                - metric_id: "rain_daily"
+                                  statistic: "sum"
+                            date_range:
+                                start: "2026-08-31T00:00:00Z"
+                                end: "2026-09-07T23:59:59Z"
+            responses:
+                "200":
+                    description: Query executed successfully
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/QueryResponse"
+                            example:
+                                query_metadata:
+                                    date_range:
+                                        start: "2026-08-31T00:00:00Z"
+                                        end: "2026-09-07T23:59:59Z"
+                                results:
+                                    - station_id: "ha-home-2026"
+                                      device_model: "md-2026"
+                                      metrics:
+                                          - metric_id: "temp_outdoor"
+                                            name: "Outdoor Temperature"
+                                            statistic: "average"
+                                            value: 19.8
+                                            unit: "C"
+                                          - metric_id: "wind_gust"
+                                            name: "Wind Gust"
+                                            statistic: "max"
+                                            value: 34.5
+                                            unit: "km/h"
+                                          - metric_id: "rain_daily"
+                                            name: "Daily Rainfall"
+                                            statistic: "sum"
+                                            value: 14.2
+                                            unit: "mm"
+                "400":
+                    $ref: "#/components/responses/400BadRequest"
+                "500":
+                    $ref: "#/components/responses/500InternalError"
+
+components:
+    schemas:
+        IngestPayload:
+            type: object
+            required:
+                - station_id
+                - device_model
+                - timestamp
+                - metrics
+            properties:
+                station_id:
+                    type: string
+                    description: Unique identifier for the weather station or hub.
+                    example: "ha-home-2026"
+                device_model:
+                    type: string
+                    description: Hardware model designation.
+                    example: "md-2026"
+                timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 UTC timestamp of reading capture.
+                    example: "2026-09-07T11:50:00Z"
+                metrics:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/MetricIngestItem"
+
+        MetricIngestItem:
+            type: object
+            required:
+                - metric_id
+                - value
+            properties:
+                metric_id:
+                    type: string
+                    description: Standardized metric key name.
+                    example: "temp_outdoor"
+                name:
+                    type: string
+                    description: Optional human-readable display name.
+                    example: "Outdoor Temperature"
+                value:
+                    type: number
+                    format: double
+                    description: The measured numeric reading value.
+                    example: 22.4
+                unit:
+                    type: string
+                    description: Measurement unit designation.
+                    example: "C"
+
+        IngestResponse:
+            type: object
+            properties:
+                status:
+                    type: string
+                    example: "success"
+                message:
+                    type: string
+                    example: "Metrics recorded successfully"
+                station_id:
+                    type: string
+                    example: "ha-home-2026"
+                metrics_processed:
+                    type: integer
+                    example: 4
+                processed_at:
+                    type: string
+                    format: date-time
+                    example: "2026-09-07T11:50:01Z"
+
+        QueryRequest:
+            type: object
+            required:
+                - metrics
+            properties:
+                station_ids:
+                    type: array
+                    description: List of station IDs to query. Omitted or empty array queries ALL stations.
+                    items:
+                        type: string
+                    example: ["ha-home-2026", "ecowitt-ws90-001"]
+                metrics:
+                    type: array
+                    description: Metrics to calculate, each paired with its own requested statistic.
+                    items:
+                        $ref: "#/components/schemas/MetricQueryParam"
+                date_range:
+                    $ref: "#/components/schemas/DateRange"
+
+        MetricQueryParam:
+            type: object
+            required:
+                - metric_id
+                - statistic
+            properties:
+                metric_id:
+                    type: string
+                    description: Standardized metric key identifier.
+                    example: "temp_outdoor"
+                statistic:
+                    type: string
+                    enum: [average, min, max, sum]
+                    description: Statistic calculation function applied specifically to this metric.
+                    example: "average"
+
+        DateRange:
+            type: object
+            description: Time period filter (between 1 day and 1 month). If omitted, defaults to latest available data.
+            properties:
+                start:
+                    type: string
+                    format: date-time
+                    example: "2026-08-31T00:00:00Z"
+                end:
+                    type: string
+                    format: date-time
+                    example: "2026-09-07T23:59:59Z"
+
+        QueryResponse:
+            type: object
+            properties:
+                query_metadata:
+                    type: object
+                    properties:
+                        date_range:
+                            $ref: "#/components/schemas/DateRange"
+                results:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/StationQueryResult"
+
+        StationQueryResult:
+            type: object
+            properties:
+                station_id:
+                    type: string
+                    example: "ha-home-2026"
+                device_model:
+                    type: string
+                    example: "md-2026"
+                metrics:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/MetricQueryResultItem"
+
+        MetricQueryResultItem:
+            type: object
+            properties:
+                metric_id:
+                    type: string
+                    example: "temp_outdoor"
+                name:
+                    type: string
+                    example: "Outdoor Temperature"
+                statistic:
+                    type: string
+                    enum: [average, min, max, sum]
+                    example: "average"
+                value:
+                    type: number
+                    format: double
+                    example: 19.8
+                unit:
+                    type: string
+                    example: "C"
+
+        ErrorResponse:
+            type: object
+            properties:
+                error:
+                    type: string
+                    example: "BAD_REQUEST"
+                message:
+                    type: string
+                    example: "Invalid metric identifier or statistic type specified."
+                timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-09-07T12:00:00Z"
+
+    responses:
+        400BadRequest:
+            description: Invalid request payload, missing fields, or bad parameters.
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/ErrorResponse"
+        500InternalError:
+            description: Internal server failure.
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/ErrorResponse"
